@@ -34,7 +34,7 @@ Vue.use(VueCollision, { globalTriggers: ['resize', 'scroll'] })
 ### Components
 ```js
 <template>
-  <component-name v-collision="['groupone']" @collide="onCollideHandler" @collide-groupone="onGroupOneCollide"></component-name>
+  <component-name v-collision="['groupone']" @collide="onCollideHandler" @non-collide="nonCollideHandler" @collide-groupone="onGroupOneCollide" @non-collide-groupone="nonGroupOneCollide"></component-name>
 </template>
 
 <script>
@@ -43,8 +43,14 @@ Vue.use(VueCollision, { globalTriggers: ['resize', 'scroll'] })
       onCollideHandler (collider) {
         // logic for 'window' group, called when the component collides with window
       },
+      nonCollideHandler (collider) {
+        // logic for 'window' group, called when the component does NOT collide with window
+      },
       onGroupOneCollide (collider) {
         // logic for 'groupone' group, called when the component collides inside 'groupone' group
+      },
+      nonGroupOneCollide (collider) {
+        // logic for 'groupone' group, called when the component does NOT collide inside 'groupone' group
       }
     }
   }
@@ -60,7 +66,9 @@ Vue.use(VueCollision, { globalTriggers: ['resize', 'scroll'] })
 
 ### Events
 - `@collide`: happens when the component is colliding with the window (based on: [innerWidth](https://developer.mozilla.org/en/docs/Web/API/window/innerWidth) and [innerHeight](https://developer.mozilla.org/en/docs/Web/API/window/innerHeight))
+- `@non-collide`: happens when the component is *not* colliding with the window
 - `@collide[-groupName]`: happens when the component is colliding with someone in the same group
+- `@non-collide[-groupName]`: happens when the component is *not* colliding with something in the same group (can collide with any other component in the same group at the same time)
 - Every event calls a `function (collider)` when fired. The `collider` is the Vue istance that is colliding with `this`
 
 ## API

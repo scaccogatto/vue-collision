@@ -125,6 +125,8 @@ const VueCollision = {
     for (let vnode of windowGroup) {
       if (VueCollision._checkCollision(VueCollision._windowRect, vnode.$el.getBoundingClientRect())) {
         vnode.$emit('collide', window)
+      } else {
+        vnode.$emit('non-collide', window)
       }
     }
 
@@ -134,6 +136,9 @@ const VueCollision = {
         if (VueCollision._checkCollision(vnodeSet[0].$el.getBoundingClientRect(), vnodeSet[1].$el.getBoundingClientRect())) {
           vnodeSet[0].$emit('collide-' + groupName, vnodeSet[1])
           vnodeSet[1].$emit('collide-' + groupName, vnodeSet[0])
+        } else {
+          vnodeSet[0].$emit('non-collide-' + groupName, vnodeSet[1])
+          vnodeSet[1].$emit('non-collide-' + groupName, vnodeSet[0])
         }
       }
     }

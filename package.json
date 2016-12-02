@@ -1,6 +1,6 @@
 {
   "name": "vue-collision",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "fires a @collided event on collision with viewport or any other bounding box",
   "author": {
     "name": "Marco Boffo",
@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/scaccogatto/vue-throttle-events.git"
+    "url": "https://github.com/scaccogatto/vue-collision.git"
   },
   "main": "dist/vue-collision.js",
   "license": "MIT",

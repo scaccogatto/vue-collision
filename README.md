@@ -1,6 +1,6 @@
 # vue-collision
 
-> fires a @collided[-groupName] event on collision with viewport or any other bounding box, [WayPoints](http://imakewebthings.com/waypoints/)-like
+> fires a @collided[-groupName] event on collision with viewport or any other bounding box, [Waypoints](http://imakewebthings.com/waypoints/)-like
 
 ## Status
 

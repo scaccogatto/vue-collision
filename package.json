@@ -1,0 +1,33 @@
+{
+  "name": "vue-collision",
+  "version": "1.0.0",
+  "description": "fires a @collided event on collision with viewport or any other bounding box",
+  "author": {
+    "name": "Marco Boffo",
+    "email": "<marcoboffo.waves@gmail.com>"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/scaccogatto/vue-throttle-events.git"
+  },
+  "main": "dist/vue-collision.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "webpack --config webpack.config.js",
+    "test": "mocha"
+  },
+  "dependencies": {
+    "vue": "^2.0.1"
+  },
+  "devDependencies": {
+    "babel-core": "^6.18.2",
+    "babel-loader": "^6.2.8",
+    "babel-preset-latest": "^6.16.0",
+    "js-combinatorics": "^0.5.2",
+    "jsdom": "^9.8.3",
+    "mocha": "^3.2.0",
+    "mocha-jsdom": "^1.1.0",
+    "vue-throttle-event": "^1.0.1",
+    "webpack": "^2.1.0-beta.27"
+  }
+}

@@ -1,6 +1,6 @@
 {
   "name": "vue-collision",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "fires a @collided event on collision with viewport or any other bounding box",
   "author": {
     "name": "Marco Boffo",

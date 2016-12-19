@@ -107,12 +107,12 @@ const VueCollision = {
     Vue.mixin({
       mounted () {
         if (typeof this._collisionObject !== 'undefined') {
-          VueCollision.checkGroups([this], VueCollision._filterByGroups(this._collisionObject.customGroupsList))
+          VueCollision.checkGroups(this._collisionObject.windowGroup ? [this] : [], VueCollision._filterByGroups(this._collisionObject.customGroupsList))
         }
       },
       updated () {
         if (typeof this._collisionObject !== 'undefined') {
-          VueCollision.checkGroups([this], VueCollision._filterByGroups(this._collisionObject.customGroupsList))
+          VueCollision.checkGroups(this._collisionObject.windowGroup ? [this] : [], VueCollision._filterByGroups(this._collisionObject.customGroupsList))
         }
       }
     })

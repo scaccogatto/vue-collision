@@ -40,8 +40,13 @@ const VueCollision = {
         // setup istance variables
         vnode.child._collisionObject = {
           windowGroup: typeof binding.modifiers.prevent === 'undefined',
-          customGroupsList: typeof binding.value === 'object' ? binding.value : []
+          customGroupsList: typeof binding.value === 'object' ? binding.value : [],
+          _lastRectangle: { width: undefined, height: undefined, top: undefined, left: undefined },
+          _lastFrame: undefined
         }
+
+        // check for element size updates
+        vnode.child._collisionObject._lastFrame = window.requestAnimationFrame(VueCollision._vnodeFrameCheck.bind(undefined, vnode))
       },
       updated (el, binding, vnode, oldVnode) {
         // update vnode inside window's group
@@ -79,6 +84,10 @@ const VueCollision = {
 
         // setup istance variables
         vnode.child._collisionObject.customGroups = typeof binding.value === 'object' ? binding.value : []
+
+        // reset frame checks
+        window.cancelAnimationFrame(vnode.child._collisionObject._lastFrame)
+        vnode.child._collisionObject._lastFrame = window.requestAnimationFrame(VueCollision._vnodeFrameCheck.bind(undefined, vnode))
       },
       unbind (el, binding, vnode) {
         // if we had some custom groups
@@ -97,6 +106,9 @@ const VueCollision = {
             VueCollision._customGroups[group]._combinations = VueCollision._combine(VueCollision._customGroups[group].vnodes)
           }
         }
+
+        // stop frame checks
+        window.cancelAnimationFrame(vnode.child._collisionObject._lastFrame)
 
         // free some memory
         delete vnode.child._collisionObject
@@ -193,6 +205,26 @@ const VueCollision = {
     rect1.left + rect1.width > rect2.left &&
     rect1.top < rect2.top + rect2.height &&
     rect1.height + rect1.top > rect2.top
+  },
+  _boxHasChanged (oldBox, newBox) {
+    return oldBox.top !== newBox.top ||
+      oldBox.left !== newBox.left ||
+      oldBox.width !== newBox.width ||
+      oldBox.height !== newBox.height
+  },
+  _vnodeFrameCheck (vnode) {
+    let oldBox = vnode.child._collisionObject._lastRectangle
+    let newBox = vnode.child.$el.getBoundingClientRect()
+    if (VueCollision._boxHasChanged(oldBox, newBox)) {
+      // trigger collision detect
+      VueCollision.checkGroups(vnode.child._collisionObject.windowGroup ? [vnode.child] : [], VueCollision._filterByGroups(vnode.child._collisionObject.customGroupsList))
+
+      // refresh inner value
+      vnode.child._collisionObject._lastRectangle = newBox
+    }
+
+    // recursive call
+    vnode.child._collisionObject._lastFrame = window.requestAnimationFrame(VueCollision._vnodeFrameCheck.bind(undefined, vnode))
   }
 }
 

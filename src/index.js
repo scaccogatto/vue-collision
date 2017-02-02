@@ -14,7 +14,7 @@ const VueCollision = {
     window.addEventListener('vue-collision-window_rect_update', VueCollision._updateWindowRect)
 
     // define the base window sizes
-    window.dispatchEvent(new Event('vue-collision-window_rect_update'))
+    window.dispatchEvent(new window.CustomEvent('vue-collision-window_rect_update'))
 
     // define global group checks
     for (let eventName of options.globalTriggers) {

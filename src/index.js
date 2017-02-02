@@ -1,3 +1,4 @@
+import 'custom-event-polyfill'
 import VueThrottleEvent from 'vue-throttle-event'
 const $combination = require('js-combinatorics').combination;
 

@@ -1,6 +1,6 @@
 {
   "name": "vue-collision",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "fires a @collided event on collision with viewport or any other bounding box",
   "author": {
     "name": "Marco Boffo",
@@ -23,6 +23,7 @@
     "babel-core": "^6.18.2",
     "babel-loader": "^6.2.8",
     "babel-preset-latest": "^6.16.0",
+    "custom-event-polyfill": "^0.3.0",
     "js-combinatorics": "^0.5.2",
     "jsdom": "^9.8.3",
     "mocha": "^3.2.0",

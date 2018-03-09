@@ -1,3 +1,24 @@
 language: node_js
+
 node_js:
-  - "node"
+  - lts/carbon
+
+install:
+  - npm install
+
+script:
+  - npm run start
+
+cache:
+  directories:
+  - node_modules
+
+deploy:
+  provider: npm
+  email: marcoboffo.waves@gmail.com
+  skip_cleanup: true
+  api_key:
+    secure: aANNFBQx9kUMMllsrP3td1JBXcrLBbieU8ZrVFxgdX1YKlTIJfTK33MVbUrQ4mmwDzGiwghB6qT4EbPODf6pCXu/Jh/8nXpeLUzzMWujUeFFP3t2Nnc6NhvwtvcNHMOzjp8oST/p9t7G4ySLMXEU9HAn7ok+vLdcJ1TTj7RRO4hIryf/Ogh9dvEqIJ9gYGQKeeBQToa/ibzk2R/uA3e0rAYRSINA1oBrJgfXYqyP8JUVhcngYn4PPg1PqvE9F42H9P/MDIMG3Lo7PbtWxOfFJ595qrcg1+VAjo+iXovJCzxjZ5HomzcNgdVbkDX3+XHNXPt/TGA9zXF0ibNN1BNn6Fe2+/NUjfNodruh8mjOs9hQcO3PZpXTeL9MPz7FBf3MYaUuXl1Do0jQGLkUikt8m3EYStJ/OXP5yvl22OEK8E79iHGjJRwmUcluuVOviRC/slLJQMHrbHWB4ym+jArI9FbV8ETojAh7ZiL13lK+r0jgWaSaMbQJ49lu7icyQVzpmuaNreVT6QXCuDYpMGwgjxfn7paYwI2s2zFAmup+jJnzLKtO7dB4mAZnazR4wqLYx3WtEd4qot9aFGAFpBtzUZDuoDjkQ/pO1zdcxhgDgvHcDvDyQRXtyHc9Io2OWMYm1XIiMJ4+sq25Ze+no6lsfeLbap9iDcULxsqxessjOYo=
+  on:
+    tags: true
+    repo: scaccogatto/vue-collision

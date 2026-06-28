@@ -1,6 +1,6 @@
 {
   "name": "vue-collision",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "fires a collide/non-collide event on collision with viewport or any other bounding box",
   "type": "module",
   "author": {
@@ -15,11 +15,14 @@
   "keywords": [
     "vue",
     "vue3",
+    "typescript",
+    "vite",
     "collision",
     "intersection",
     "viewport",
     "directive",
-    "bounding-box"
+    "bounding-box",
+    "overlap"
   ],
   "main": "./dist/vue-collision.cjs",
   "module": "./dist/vue-collision.js",

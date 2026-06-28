@@ -13,7 +13,6 @@ describe('checkCollision', () => {
   })
 
   it('returns false for rects that touch edge-to-edge (exclusive boundaries)', () => {
-    // touching at x=100 but not overlapping
     const r1 = { left: 0, top: 0, width: 100, height: 100 }
     const r2 = { left: 100, top: 0, width: 100, height: 100 }
     expect(checkCollision(r1, r2)).toBe(false)
@@ -120,42 +119,50 @@ describe('v-collision directive — viewport (IntersectionObserver)', () => {
     expect(observeSpy).toHaveBeenCalledWith(wrapper.element)
   })
 
-  it('dispatches "collide" when IntersectionObserver fires with isIntersecting=true', async () => {
+  it('dispatches "collide" reaching @collide listener when isIntersecting=true', async () => {
+    // DISCRIMINATING: uses Vue template @ binding to prove event reaches the handler.
+    // Vue 3.5 template compiler generates `"on:collide"` which parseName resolves as
+    // `addEventListener('collide', ...)` — exact name match with our dispatch.
     const { mount } = await import('@vue/test-utils')
     const { default: VueCollision } = await import('../index')
 
+    const onCollide = vi.fn()
     const wrapper = mount(
-      { template: '<div v-collision />' },
+      {
+        template: '<div v-collision @collide="onCollide" />',
+        methods: { onCollide },
+      },
       { global: { plugins: [VueCollision] } },
     )
 
-    const el = wrapper.element
-    const received: string[] = []
-    el.addEventListener('collide', () => received.push('collide'))
-    el.addEventListener('non-collide', () => received.push('non-collide'))
+    ioCallback(
+      [{ isIntersecting: true, target: wrapper.element } as IntersectionObserverEntry],
+      {} as IntersectionObserver,
+    )
 
-    ioCallback([{ isIntersecting: true, target: el } as IntersectionObserverEntry], {} as IntersectionObserver)
-
-    expect(received).toEqual(['collide'])
+    expect(onCollide).toHaveBeenCalledOnce()
+    expect((onCollide.mock.calls[0][0] as CustomEvent).detail).toBe(window)
   })
 
-  it('dispatches "non-collide" when IntersectionObserver fires with isIntersecting=false', async () => {
+  it('dispatches "non-collide" reaching @non-collide listener when isIntersecting=false', async () => {
     const { mount } = await import('@vue/test-utils')
     const { default: VueCollision } = await import('../index')
 
+    const onNonCollide = vi.fn()
     const wrapper = mount(
-      { template: '<div v-collision />' },
+      {
+        template: '<div v-collision @non-collide="onNonCollide" />',
+        methods: { onNonCollide },
+      },
       { global: { plugins: [VueCollision] } },
     )
 
-    const el = wrapper.element
-    const received: string[] = []
-    el.addEventListener('collide', () => received.push('collide'))
-    el.addEventListener('non-collide', () => received.push('non-collide'))
+    ioCallback(
+      [{ isIntersecting: false, target: wrapper.element } as IntersectionObserverEntry],
+      {} as IntersectionObserver,
+    )
 
-    ioCallback([{ isIntersecting: false, target: el } as IntersectionObserverEntry], {} as IntersectionObserver)
-
-    expect(received).toEqual(['non-collide'])
+    expect(onNonCollide).toHaveBeenCalledOnce()
   })
 
   it('disconnects IntersectionObserver on unmount', async () => {
@@ -180,7 +187,6 @@ describe('v-collision directive — viewport (IntersectionObserver)', () => {
       { global: { plugins: [VueCollision] } },
     )
 
-    // IntersectionObserver.observe should never be called for prevent elements
     expect(observeSpy).not.toHaveBeenCalled()
   })
 })
@@ -192,10 +198,9 @@ describe('v-collision directive — viewport (IntersectionObserver)', () => {
 describe('v-collision directive — element groups (rAF + getBoundingClientRect)', () => {
   let rafCallback: FrameRequestCallback
   let rafId = 0
-  let cancelledIds: number[]
 
   beforeEach(() => {
-    cancelledIds = []
+    rafId = 0
 
     vi.stubGlobal(
       'IntersectionObserver',
@@ -211,28 +216,31 @@ describe('v-collision directive — element groups (rAF + getBoundingClientRect)
       return ++rafId
     })
 
-    vi.stubGlobal('cancelAnimationFrame', (id: number) => {
-      cancelledIds.push(id)
-    })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('dispatches collide-groupA when two elements in same group overlap', async () => {
+  it('dispatches collide-groupA reaching @collide-groupA listener when elements overlap', async () => {
+    // DISCRIMINATING: proves the event name the directive dispatches (`collide-groupA`)
+    // is what Vue 3.5 registers for `@collide-groupA` via the `on:event-name` prop format.
     const { mount } = await import('@vue/test-utils')
     const { default: VueCollision } = await import('../index')
 
-    // mount component with two colliding elements in the same group
+    const onCollideA = vi.fn()
+    const onCollideB = vi.fn()
+
     const wrapper = mount(
       {
         template: `
           <div>
-            <div id="a" v-collision.prevent="['groupA']" />
-            <div id="b" v-collision.prevent="['groupA']" />
+            <div id="a" v-collision.prevent="['groupA']" @collide-groupA="onCollideA" />
+            <div id="b" v-collision.prevent="['groupA']" @collide-groupA="onCollideB" />
           </div>
         `,
+        methods: { onCollideA, onCollideB },
       },
       { global: { plugins: [VueCollision] } },
     )
@@ -240,42 +248,39 @@ describe('v-collision directive — element groups (rAF + getBoundingClientRect)
     const elA = wrapper.find('#a').element as HTMLElement
     const elB = wrapper.find('#b').element as HTMLElement
 
-    // Overlapping rects
     vi.spyOn(elA, 'getBoundingClientRect').mockReturnValue({
       left: 0, top: 0, width: 100, height: 100,
-      right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({})
+      right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}),
     } as DOMRect)
     vi.spyOn(elB, 'getBoundingClientRect').mockReturnValue({
       left: 50, top: 50, width: 100, height: 100,
-      right: 150, bottom: 150, x: 50, y: 50, toJSON: () => ({})
+      right: 150, bottom: 150, x: 50, y: 50, toJSON: () => ({}),
     } as DOMRect)
 
-    const collisionsA: string[] = []
-    const collisionsB: string[] = []
-    elA.addEventListener('collide-groupA', () => collisionsA.push('collide'))
-    elA.addEventListener('non-collide-groupA', () => collisionsA.push('non-collide'))
-    elB.addEventListener('collide-groupA', () => collisionsB.push('collide'))
-    elB.addEventListener('non-collide-groupA', () => collisionsB.push('non-collide'))
-
-    // Trigger rAF callback (scheduled during mount)
     rafCallback(0)
 
-    expect(collisionsA).toEqual(['collide'])
-    expect(collisionsB).toEqual(['collide'])
+    expect(onCollideA).toHaveBeenCalledOnce()
+    expect(onCollideB).toHaveBeenCalledOnce()
+    // Collider is in event.detail
+    expect((onCollideA.mock.calls[0][0] as CustomEvent).detail).toBe(elB)
+    expect((onCollideB.mock.calls[0][0] as CustomEvent).detail).toBe(elA)
   })
 
-  it('dispatches non-collide-groupA when two elements do not overlap', async () => {
+  it('dispatches non-collide-groupA reaching @non-collide-groupA when elements do not overlap', async () => {
     const { mount } = await import('@vue/test-utils')
     const { default: VueCollision } = await import('../index')
+
+    const onNonCollide = vi.fn()
 
     const wrapper = mount(
       {
         template: `
           <div>
-            <div id="a" v-collision.prevent="['groupB']" />
-            <div id="b" v-collision.prevent="['groupB']" />
+            <div id="a" v-collision.prevent="['groupA']" @non-collide-groupA="onNonCollide" />
+            <div id="b" v-collision.prevent="['groupA']" />
           </div>
         `,
+        methods: { onNonCollide },
       },
       { global: { plugins: [VueCollision] } },
     )
@@ -283,56 +288,44 @@ describe('v-collision directive — element groups (rAF + getBoundingClientRect)
     const elA = wrapper.find('#a').element as HTMLElement
     const elB = wrapper.find('#b').element as HTMLElement
 
-    // Non-overlapping rects
     vi.spyOn(elA, 'getBoundingClientRect').mockReturnValue({
       left: 0, top: 0, width: 100, height: 100,
-      right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({})
+      right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}),
     } as DOMRect)
     vi.spyOn(elB, 'getBoundingClientRect').mockReturnValue({
       left: 200, top: 200, width: 100, height: 100,
-      right: 300, bottom: 300, x: 200, y: 200, toJSON: () => ({})
+      right: 300, bottom: 300, x: 200, y: 200, toJSON: () => ({}),
     } as DOMRect)
-
-    const collisionsA: string[] = []
-    elA.addEventListener('collide-groupA', () => collisionsA.push('collide'))
-    elA.addEventListener('non-collide-groupB', () => collisionsA.push('non-collide'))
 
     rafCallback(0)
 
-    expect(collisionsA).toEqual(['non-collide'])
+    expect(onNonCollide).toHaveBeenCalledOnce()
   })
 
-  it('removes element from group on unmount and stops checking pairs', async () => {
+  it('removes elements from group on unmount; post-unmount rAF fires no events', async () => {
     const { mount } = await import('@vue/test-utils')
     const { default: VueCollision } = await import('../index')
+
+    const onCollide = vi.fn()
 
     const wrapper = mount(
       {
         template: `
           <div>
-            <div id="a" v-collision.prevent="['groupC']" />
+            <div id="a" v-collision.prevent="['groupC']" @collide-groupC="onCollide" />
             <div id="b" v-collision.prevent="['groupC']" />
           </div>
         `,
+        methods: { onCollide },
       },
       { global: { plugins: [VueCollision] } },
     )
 
-    // Trigger initial rAF
-    rafCallback(0)
-
     wrapper.unmount()
 
-    // After unmount the group should have no combinations (elements removed)
-    // A fresh rAF after unmount should not dispatch events
-    const elA = wrapper.find('#a').element as HTMLElement
-    const fired: string[] = []
-    elA.addEventListener('collide-groupC', () => fired.push('collide'))
-    elA.addEventListener('non-collide-groupC', () => fired.push('non-collide'))
-
-    // trigger any remaining rAF
+    // After unmount, group has no combinations; rAF fires nothing
     if (rafCallback) rafCallback(0)
 
-    expect(fired).toHaveLength(0)
+    expect(onCollide).not.toHaveBeenCalled()
   })
 })

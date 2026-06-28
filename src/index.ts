@@ -84,6 +84,10 @@ const unobserveViewport = (el: HTMLElement): void => {
 const checkElementGroup = (groupName: string): void => {
   const group = customGroups[groupName]
   if (!group) return
+  // Vue 3.5's template compiler uses the `on:event-name` prop format for DOM elements,
+  // which preserves the event name verbatim (parseName strips `on:` and keeps the rest).
+  // So `@collide-groupA` registers a DOM listener for exactly `collide-groupA` —
+  // dispatch the same string the user passed as the group name.
   for (const [a, b] of group.combinations) {
     const ra = a.getBoundingClientRect()
     const rb = b.getBoundingClientRect()

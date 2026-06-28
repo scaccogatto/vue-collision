@@ -21,7 +21,6 @@ interface CollisionElementState {
   inWindowGroup: boolean
   groups: string[]
   ioObserver?: IntersectionObserver
-  rafId?: number
 }
 
 export interface CollisionOptions {

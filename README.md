@@ -123,6 +123,8 @@ v2.0.0 is a full Vue 3 rewrite. Key breaking changes:
 
 4. **Viewport detection** — now uses `IntersectionObserver` instead of `requestAnimationFrame` polling (lower CPU, fires immediately).
 
+5. **Element-group re-check timing** — element-group collision is checked once per frame-request, triggered by mount, `updated`, and the configured `globalTriggers` (default: `resize`, `scroll`). Pure CSS transforms or animations that move elements without triggering a scroll, resize, or Vue reactive update will not automatically re-check. Add a global trigger event or call `window.dispatchEvent(new Event('resize'))` to force a re-check if needed.
+
 ## Development
 
 ```sh

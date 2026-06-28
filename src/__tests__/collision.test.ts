@@ -302,7 +302,9 @@ describe('v-collision directive — element groups (rAF + getBoundingClientRect)
     expect(onNonCollide).toHaveBeenCalledOnce()
   })
 
-  it('removes elements from group on unmount; post-unmount rAF fires no events', async () => {
+  it('removes elements from group on unmount; post-unmount rAF fires no additional events', async () => {
+    // DISCRIMINATING: proves removeFromGroup empties combinations so cleanup actually ran.
+    // Without cleanup the second rafCallback(0) call would dispatch a second collide event.
     const { mount } = await import('@vue/test-utils')
     const { default: VueCollision } = await import('../index')
 
@@ -321,11 +323,28 @@ describe('v-collision directive — element groups (rAF + getBoundingClientRect)
       { global: { plugins: [VueCollision] } },
     )
 
+    const elA = wrapper.find('#a').element as HTMLElement
+    const elB = wrapper.find('#b').element as HTMLElement
+
+    // Mock overlapping rects so the rAF check produces a collide event
+    vi.spyOn(elA, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, width: 100, height: 100,
+      right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}),
+    } as DOMRect)
+    vi.spyOn(elB, 'getBoundingClientRect').mockReturnValue({
+      left: 50, top: 50, width: 100, height: 100,
+      right: 150, bottom: 150, x: 50, y: 50, toJSON: () => ({}),
+    } as DOMRect)
+
+    // Pre-unmount: rAF fires collide once for elA (elB has no listener)
+    rafCallback(0)
+    expect(onCollide).toHaveBeenCalledOnce()
+
+    // Unmount removes both elements from groupC → combinations array is now empty
     wrapper.unmount()
 
-    // After unmount, group has no combinations; rAF fires nothing
-    if (rafCallback) rafCallback(0)
-
-    expect(onCollide).not.toHaveBeenCalled()
+    // Post-unmount: re-running the same rAF callback finds empty combinations; count stays at 1
+    rafCallback(0)
+    expect(onCollide).toHaveBeenCalledOnce()
   })
 })

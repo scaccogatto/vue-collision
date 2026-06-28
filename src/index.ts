@@ -178,7 +178,7 @@ const directive: ObjectDirective<HTMLElement, string[] | undefined> = {
     state.groups = nextGroups
   },
 
-  unmounted(el: HTMLElement, binding: DirectiveBinding<string[] | undefined>) {
+  unmounted(el: HTMLElement) {
     const state = elementStates.get(el)
     if (!state) return
 

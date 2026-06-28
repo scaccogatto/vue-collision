@@ -1,109 +1,137 @@
 # vue-collision
 
-> fires a @collided[-groupName] event on collision with viewport or any other bounding box, [Waypoints](http://imakewebthings.com/waypoints/)-like
+> Vue 3 directive that fires `collide` / `non-collide` events when an element enters or leaves the viewport, plus element-to-element group collision detection via AABB.
 
-## Status
-
-[![Build Status](https://travis-ci.org/scaccogatto/vue-collision.svg?branch=master)](https://travis-ci.org/scaccogatto/vue-collision)
+[![CI](https://github.com/scaccogatto/vue-collision/actions/workflows/ci.yml/badge.svg)](https://github.com/scaccogatto/vue-collision/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/vue-collision.svg)](https://www.npmjs.com/package/vue-collision)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## Features
 
-- Uses [requestAnimationFrame](https://developer.mozilla.org/en-US/docs/Web/API/window/requestAnimationFrame)
-- Wrap up your components in groups
-- Group all your components in the `window` group by default
-- Checks collisions group by group and fire custom events when a collision happens
+- **Viewport collision** via [`IntersectionObserver`](https://developer.mozilla.org/en-US/docs/Web/API/Intersection_Observer_API) — zero-cost, edge-triggered
+- **Element-to-element group collision** via rAF + AABB overlap — groups any number of elements and checks every pair
+- Fires native DOM `CustomEvent`s (`collide`, `non-collide`, `collide-<group>`, `non-collide-<group>`)
+- Grouping: place elements in named groups; any pair within a group is checked
+- `.prevent` modifier to opt out of viewport tracking
+- TypeScript source with `.d.ts` declarations
+- Vue 3 only (v2.x); for Vue 2 use [v1.x](https://www.npmjs.com/package/vue-collision/v/1.6.0)
 
-## Installation
+## Install
 
-### npm
-```js
-$ npm install vue-collision --save-dev
+```sh
+npm install vue-collision
 ```
 
-### Vue's main.js
-```js
+## Quick start
+
+### main.ts
+
+```ts
+import { createApp } from 'vue'
 import VueCollision from 'vue-collision'
+import App from './App.vue'
 
-// collision
-Vue.use(VueCollision, { globalTriggers: ['resize', 'scroll'] })
+createApp(App)
+  .use(VueCollision, { globalTriggers: ['resize', 'scroll'] })
+  .mount('#app')
 ```
 
-### Arguments
-- options [optional]: object defining what triggers the groups' checks
+### Component (`<script setup>`)
 
-### Components
-```js
-<template>
-  <component-name v-collision="['groupone']" @collide="onCollideHandler" @non-collide="nonCollideHandler" @collide-groupone="onGroupOneCollide" @non-collide-groupone="nonGroupOneCollide"></component-name>
-</template>
-
-<script>
-  export default {
-    methods: {
-      onCollideHandler (collider) {
-        // logic for 'window' group, called when the component collides with window
-      },
-      nonCollideHandler (collider) {
-        // logic for 'window' group, called when the component does NOT collide with window
-      },
-      onGroupOneCollide (collider) {
-        // logic for 'groupone' group, called when the component collides inside 'groupone' group
-      },
-      nonGroupOneCollide (collider) {
-        // logic for 'groupone' group, called when the component does NOT collide inside 'groupone' group
-      }
-    }
-  }
-</script>
-```
-## Usage
-
-### v-collision directive
-- Add `v-collision` directive to any component to make it part of the `vue-collision` family and a `window-group`'s direct son
-- Specify a `v-collision.prevent` modifier in order to exclude the component from `window-group`
-- Add a value to the directive (`v-collision="['groupone', 'grouptwo']"`) in order to reference the component into the `groupone` and `grouptwo` groups
-- You can mix it together: `v-collision.prevent="['groupone', 'grouptwo']"`
-
-### Events
-- `@collide`: happens when the component is colliding with the window (based on: [innerWidth](https://developer.mozilla.org/en/docs/Web/API/window/innerWidth) and [innerHeight](https://developer.mozilla.org/en/docs/Web/API/window/innerHeight))
-- `@non-collide`: happens when the component is *not* colliding with the window
-- `@collide[-groupName]`: happens when the component is colliding with someone in the same group
-- `@non-collide[-groupName]`: happens when the component is *not* colliding with something in the same group (can collide with any other component in the same group at the same time)
-- Every event calls a `function (collider)` when fired. The `collider` is the Vue istance that is colliding with `this`
-
-## API
-
-- `VueCollision.checkAllGroups()`: it checks all the groups (even window's one) and fire the events stack
-- `VueCollision.checkGroups(Array windowTest, Object customGroups)`: it tests the passed groups and/or Vue's components instances.
-  - `windowTest` must be an array containing [Components](https://vuejs.org/v2/api/#Vue-component)
-  - `customGroups` must be and an Object defined as:
-
-```js
-customGroups = {
-  groupName: {
-    combinations: [
-      [Component, Component],
-      [Component, Component],
-      ...
-    ]
-  },
-  groupTwoName: {
-    combinations: [
-      [Component, Component],
-      [Component, Component],
-      ...
-    ]
-  }
-  ...
+```vue
+<script setup lang="ts">
+const onCollide = (e: CustomEvent) => {
+  // e.detail is `window` for viewport events
+  console.log('in viewport', e.detail)
 }
+const onLeave = (e: CustomEvent) => {
+  console.log('left viewport')
+}
+const onGroupCollide = (e: CustomEvent<HTMLElement>) => {
+  // e.detail is the other element this element collided with
+  console.log('collided with', e.detail)
+}
+</script>
+
+<template>
+  <!-- tracks viewport + 'groupA' element collisions -->
+  <div
+    v-collision="['groupA']"
+    @collide="onCollide"
+    @non-collide="onLeave"
+    @collide-groupA="onGroupCollide"
+    @non-collide-groupA="onGroupCollide"
+  />
+
+  <!-- viewport only (no custom group) -->
+  <div v-collision @collide="onCollide" @non-collide="onLeave" />
+
+  <!-- groupA only, skip viewport tracking -->
+  <div
+    v-collision.prevent="['groupA']"
+    @collide-groupA="onGroupCollide"
+  />
+</template>
 ```
 
-## Testing
-This software uses [mocha](https://mochajs.org/) as testing framework, some functions are not being fully tested (`checkGroups` and `install`) since creating a fake VueJS environment in order to test some functions that urely on already fully tested sub-functions seems not worth.
+## Directive reference
 
-- Clone this repository
-- `cd vue-viewports`
-- `npm install`
-- `npm test`
+| Syntax | Behaviour |
+|--------|-----------|
+| `v-collision` | Viewport group + IntersectionObserver |
+| `v-collision.prevent` | Opt out of viewport group |
+| `v-collision="['g1', 'g2']"` | Add to named groups (`g1`, `g2`) |
+| `v-collision.prevent="['g1']"` | Named groups only, no viewport tracking |
 
-*Feel free to contribute and ask questions*
+## Events
+
+All events are native DOM `CustomEvent`s. Read the collider from `event.detail`.
+
+| Event | Fires when | `event.detail` |
+|-------|-----------|----------------|
+| `collide` | Element enters the viewport | `window` |
+| `non-collide` | Element leaves the viewport | `window` |
+| `collide-<group>` | Element overlaps another in the same group | The other `HTMLElement` |
+| `non-collide-<group>` | Element stops overlapping another in the same group | The other `HTMLElement` |
+
+## Plugin options
+
+```ts
+app.use(VueCollision, {
+  // Events that trigger element-group re-checks. Default: ['resize', 'scroll']
+  globalTriggers: ['resize', 'scroll'],
+})
+```
+
+## Migrating from v1 (Vue 2 → Vue 3)
+
+v2.0.0 is a full Vue 3 rewrite. Key breaking changes:
+
+1. **Install** — replace `Vue.use(...)` with `app.use(...)`.
+
+2. **Event delivery** — events are now native DOM `CustomEvent`s, not Vue component events. The collider is on `event.detail`, not the first argument:
+
+   ```js
+   // v1 (Vue 2)
+   onCollide(collider) { /* collider was the Vue instance */ }
+
+   // v2 (Vue 3)
+   onCollide(event) { const collider = event.detail }
+   ```
+
+3. **Listen with `@` on a plain element** — `v-collision` must be placed on a host element (`<div>`, `<section>`, etc.) not a component root. If your component exposes its root element, use `v-bind="$attrs"` to forward the listeners.
+
+4. **Viewport detection** — now uses `IntersectionObserver` instead of `requestAnimationFrame` polling (lower CPU, fires immediately).
+
+## Development
+
+```sh
+npm install
+npm run typecheck
+npm run build
+npm test
+```
+
+## License
+
+MIT

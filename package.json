@@ -1,7 +1,8 @@
 {
   "name": "vue-collision",
-  "version": "1.6.0",
-  "description": "fires a @collided event on collision with viewport or any other bounding box",
+  "version": "2.0.0",
+  "description": "fires a collide/non-collide event on collision with viewport or any other bounding box",
+  "type": "module",
   "author": {
     "name": "Marco Boffo",
     "email": "marcoboffo.waves@gmail.com"
@@ -10,25 +11,48 @@
     "type": "git",
     "url": "https://github.com/scaccogatto/vue-collision.git"
   },
-  "main": "dist/vue-collision.js",
   "license": "MIT",
-  "scripts": {
-    "start": "webpack --config webpack.config.js",
-    "test": "mocha"
+  "keywords": [
+    "vue",
+    "vue3",
+    "collision",
+    "intersection",
+    "viewport",
+    "directive",
+    "bounding-box"
+  ],
+  "main": "./dist/vue-collision.umd.cjs",
+  "module": "./dist/vue-collision.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/vue-collision.js",
+      "require": "./dist/vue-collision.umd.cjs"
+    }
   },
-  "dependencies": {
-    "vue": "^2.0.1"
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "vue": "^3.0.0"
   },
   "devDependencies": {
-    "babel-core": "^6.18.2",
-    "babel-loader": "^6.2.8",
-    "babel-preset-latest": "^6.16.0",
-    "custom-event-polyfill": "^0.3.0",
-    "js-combinatorics": "^0.5.2",
-    "jsdom": "^9.8.3",
-    "mocha": "^3.2.0",
-    "mocha-jsdom": "^1.1.0",
-    "vue-throttle-event": "^1.3.1",
-    "webpack": "^2.1.0-beta.27"
+    "@vitejs/plugin-vue": "^6.0.7",
+    "@vue/test-utils": "^2.4.11",
+    "happy-dom": "^20.10.6",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0",
+    "vite-plugin-dts": "^5.0.3",
+    "vitest": "^4.1.9",
+    "vue": "^3.5.39",
+    "vue-tsc": "^3.3.5"
   }
 }

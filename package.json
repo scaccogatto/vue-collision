@@ -21,14 +21,14 @@
     "directive",
     "bounding-box"
   ],
-  "main": "./dist/vue-collision.umd.cjs",
+  "main": "./dist/vue-collision.cjs",
   "module": "./dist/vue-collision.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/vue-collision.js",
-      "require": "./dist/vue-collision.umd.cjs"
+      "require": "./dist/vue-collision.cjs"
     }
   },
   "files": [

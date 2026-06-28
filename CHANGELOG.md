@@ -24,8 +24,8 @@ All notable changes to this project will be documented in this file.
 - **Viewport collision** now uses `IntersectionObserver` (zero-cost, edge-triggered) instead of rAF polling. Fires immediately on mount when the element is already visible.
 - **Element-element group collision** retains rAF + AABB for arbitrary element pair checks (IntersectionObserver cannot cover this).
 - **TypeScript** — fully typed source with `.d.ts` declarations shipped in `dist/`.
-- **Vite library mode build** — ships ESM (`dist/vue-collision.js`) + UMD CJS (`dist/vue-collision.umd.cjs`) with proper `exports` map and `types` field.
-- **CI** — GitHub Actions on Node 20 and 22 (install → typecheck → build → test).
+- **Vite library mode build** — ships ESM (`dist/vue-collision.js`) + CJS (`dist/vue-collision.cjs`) with proper `exports` map and `types` field.
+- **CI** — GitHub Actions on Node 20 LTS (install → typecheck → build → test).
 
 ### Bug fixes (inherited from 1.6.0 source)
 

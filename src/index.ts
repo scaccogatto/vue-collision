@@ -227,8 +227,3 @@ export default VueCollision
 // Convenience re-exports for tree-shaking and testing
 // ---------------------------------------------------------------------------
 export { directive as collisionDirective }
-
-// In-browser CDN auto-install
-if (typeof window !== 'undefined' && 'Vue' in window) {
-  ;(window as unknown as Record<string, { use: (p: Plugin) => void }>)['Vue'].use(VueCollision)
-}

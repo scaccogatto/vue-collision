@@ -18,17 +18,13 @@ export default defineConfig({
   build: {
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
-      name: 'VueCollision',
-      formats: ['es', 'umd'],
-      fileName: (format) => `vue-collision.${format === 'es' ? 'js' : 'umd.cjs'}`,
+      formats: ['es', 'cjs'],
+      fileName: (format) => `vue-collision.${format === 'es' ? 'js' : 'cjs'}`,
     },
     rollupOptions: {
       external: ['vue'],
       output: {
         exports: 'named',
-        globals: {
-          vue: 'Vue',
-        },
       },
     },
   },

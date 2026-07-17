@@ -44,21 +44,28 @@ export const combine = <T>(xs: T[]): [T, T][] =>
   xs.flatMap((a, i) => xs.slice(i + 1).map((b) => [a, b] as [T, T]))
 
 // ---------------------------------------------------------------------------
-// Plugin-level state (reset on each install for SSR safety)
+// Plugin state — one instance per install() call (SSR-safe, no module-scope mutation)
 // ---------------------------------------------------------------------------
 
-let windowGroup: HTMLElement[] = []
-let customGroups: Record<string, CollisionGroupState> = {}
-let globalTriggerListeners: Array<[string, () => void]> = []
-const elementStates = new WeakMap<HTMLElement, CollisionElementState>()
+interface PluginState {
+  customGroups: Record<string, CollisionGroupState>
+  globalTriggerListeners: Array<[string, () => void]>
+  elementStates: WeakMap<HTMLElement, CollisionElementState>
+}
+
+const createPluginState = (): PluginState => ({
+  customGroups: {},
+  globalTriggerListeners: [],
+  elementStates: new WeakMap(),
+})
 
 // ---------------------------------------------------------------------------
 // Viewport detection via IntersectionObserver (fires once, edge-triggered)
 // ---------------------------------------------------------------------------
 
-const observeViewport = (el: HTMLElement): void => {
-  const state = elementStates.get(el)
-  if (!state) return
+const observeViewport = (state: PluginState, el: HTMLElement): void => {
+  const elState = state.elementStates.get(el)
+  if (!elState) return
 
   const observer = new IntersectionObserver((entries) => {
     for (const entry of entries) {
@@ -68,20 +75,20 @@ const observeViewport = (el: HTMLElement): void => {
   })
 
   observer.observe(el)
-  state.ioObserver = observer
+  elState.ioObserver = observer
 }
 
-const unobserveViewport = (el: HTMLElement): void => {
-  const state = elementStates.get(el)
-  state?.ioObserver?.disconnect()
+const unobserveViewport = (state: PluginState, el: HTMLElement): void => {
+  const elState = state.elementStates.get(el)
+  elState?.ioObserver?.disconnect()
 }
 
 // ---------------------------------------------------------------------------
 // Element-element collision via rAF (AABB, arbitrary element pairs)
 // ---------------------------------------------------------------------------
 
-const checkElementGroup = (groupName: string): void => {
-  const group = customGroups[groupName]
+const checkElementGroup = (state: PluginState, groupName: string): void => {
+  const group = state.customGroups[groupName]
   if (!group) return
   // Vue 3.5's template compiler uses the `on:event-name` prop format for DOM elements,
   // which preserves the event name verbatim (parseName strips `on:` and keeps the rest).
@@ -100,98 +107,98 @@ const checkElementGroup = (groupName: string): void => {
   }
 }
 
-const scheduleGroupRaf = (groupName: string): void => {
-  const group = customGroups[groupName]
+const scheduleGroupRaf = (state: PluginState, groupName: string): void => {
+  const group = state.customGroups[groupName]
   if (!group || group.rafId != null) return
   group.rafId = window.requestAnimationFrame(() => {
     group.rafId = undefined
-    checkElementGroup(groupName)
+    checkElementGroup(state, groupName)
   })
 }
 
-const checkAllElementGroups = (): void => {
-  for (const name of Object.keys(customGroups)) scheduleGroupRaf(name)
+const checkAllElementGroups = (state: PluginState): void => {
+  for (const name of Object.keys(state.customGroups)) scheduleGroupRaf(state, name)
 }
 
 // ---------------------------------------------------------------------------
 // Group management helpers
 // ---------------------------------------------------------------------------
 
-const pushToGroup = (el: HTMLElement, groupName: string): void => {
-  if (!customGroups[groupName]) {
-    customGroups[groupName] = { elements: [], combinations: [] }
+const pushToGroup = (state: PluginState, el: HTMLElement, groupName: string): void => {
+  if (!state.customGroups[groupName]) {
+    state.customGroups[groupName] = { elements: [], combinations: [] }
   }
-  const group = customGroups[groupName]
+  const group = state.customGroups[groupName]
   if (!group.elements.includes(el)) {
     group.elements.push(el)
     group.combinations = combine(group.elements)
   }
 }
 
-const removeFromGroup = (el: HTMLElement, groupName: string): void => {
-  const group = customGroups[groupName]
+const removeFromGroup = (state: PluginState, el: HTMLElement, groupName: string): void => {
+  const group = state.customGroups[groupName]
   if (!group) return
   group.elements = group.elements.filter((e) => e !== el)
+  if (group.elements.length === 0) {
+    delete state.customGroups[groupName]
+    return
+  }
   group.combinations = combine(group.elements)
 }
 
 // ---------------------------------------------------------------------------
-// Directive implementation
+// Directive implementation — created per-install, closes over that install's state
 // ---------------------------------------------------------------------------
 
-const directive: ObjectDirective<HTMLElement, string[] | undefined> = {
+const createDirective = (
+  state: PluginState,
+): ObjectDirective<HTMLElement, string[] | undefined> => ({
   mounted(el: HTMLElement, binding: DirectiveBinding<string[] | undefined>) {
     const groups = Array.isArray(binding.value) ? binding.value : []
     const inWindowGroup = !binding.modifiers['prevent']
 
-    elementStates.set(el, { inWindowGroup, groups })
+    state.elementStates.set(el, { inWindowGroup, groups })
 
-    if (inWindowGroup) {
-      windowGroup.push(el)
-      observeViewport(el)
-    }
+    if (inWindowGroup) observeViewport(state, el)
 
     for (const g of groups) {
-      pushToGroup(el, g)
-      scheduleGroupRaf(g)
+      pushToGroup(state, el, g)
+      scheduleGroupRaf(state, g)
     }
   },
 
   updated(el: HTMLElement, binding: DirectiveBinding<string[] | undefined>) {
-    const state = elementStates.get(el)
-    if (!state) return
+    const elState = state.elementStates.get(el)
+    if (!elState) return
 
-    const prevGroups = state.groups
+    const prevGroups = elState.groups
     const nextGroups = Array.isArray(binding.value) ? binding.value : []
 
     const removed = prevGroups.filter((g) => !nextGroups.includes(g))
     const added = nextGroups.filter((g) => !prevGroups.includes(g))
     const kept = nextGroups.filter((g) => prevGroups.includes(g))
 
-    for (const g of removed) removeFromGroup(el, g)
+    for (const g of removed) removeFromGroup(state, el, g)
     for (const g of added) {
-      pushToGroup(el, g)
-      scheduleGroupRaf(g)
+      pushToGroup(state, el, g)
+      scheduleGroupRaf(state, g)
     }
-    for (const g of kept) scheduleGroupRaf(g)
+    for (const g of kept) scheduleGroupRaf(state, g)
 
-    state.groups = nextGroups
+    elState.groups = nextGroups
   },
 
   unmounted(el: HTMLElement) {
-    const state = elementStates.get(el)
-    if (!state) return
+    const elState = state.elementStates.get(el)
+    if (!elState) return
 
-    if (state.inWindowGroup) {
-      windowGroup = windowGroup.filter((e) => e !== el)
-      unobserveViewport(el)
-    }
+    if (elState.inWindowGroup) unobserveViewport(state, el)
 
-    for (const g of state.groups) removeFromGroup(el, g)
+    for (const g of elState.groups) removeFromGroup(state, el, g)
 
-    elementStates.delete(el)
+    state.elementStates.delete(el)
   },
-}
+})
 
 // ---------------------------------------------------------------------------
 // Plugin
@@ -200,24 +207,15 @@ const directive: ObjectDirective<HTMLElement, string[] | undefined> = {
 const VueCollision: Plugin = {
   install(app: App, options: CollisionOptions = {}) {
     const triggers = options.globalTriggers ?? ['resize', 'scroll']
-
-    // Reset plugin state (important for SSR / multiple installs)
-    windowGroup = []
-    customGroups = {}
-
-    // Tear down previous global listeners if plugin re-installed
-    for (const [event, listener] of globalTriggerListeners) {
-      window.removeEventListener(event, listener)
-    }
-    globalTriggerListeners = []
+    const state = createPluginState()
 
     for (const event of triggers) {
-      const listener = () => checkAllElementGroups()
+      const listener = () => checkAllElementGroups(state)
       window.addEventListener(event, listener, { passive: true })
-      globalTriggerListeners.push([event, listener])
+      state.globalTriggerListeners.push([event, listener])
     }
 
-    app.directive('collision', directive)
+    app.directive('collision', createDirective(state))
   },
 }
 
@@ -226,4 +224,4 @@ export default VueCollision
 // ---------------------------------------------------------------------------
 // Convenience re-exports for tree-shaking and testing
 // ---------------------------------------------------------------------------
-export { directive as collisionDirective }
+export const collisionDirective = createDirective(createPluginState())

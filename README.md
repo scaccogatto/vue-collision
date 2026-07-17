@@ -4,6 +4,7 @@
 
 [![CI](https://github.com/scaccogatto/vue-collision/actions/workflows/ci.yml/badge.svg)](https://github.com/scaccogatto/vue-collision/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/vue-collision.svg)](https://www.npmjs.com/package/vue-collision)
+[![npm downloads](https://img.shields.io/npm/dm/vue-collision)](https://www.npmjs.com/package/vue-collision)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## Features

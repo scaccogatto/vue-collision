@@ -348,3 +348,241 @@ describe('v-collision directive — element groups (rAF + getBoundingClientRect)
     expect(onCollide).toHaveBeenCalledOnce()
   })
 })
+
+// ---------------------------------------------------------------------------
+// Directive integration tests — updated() hook (group diffing: added/removed/kept)
+// ---------------------------------------------------------------------------
+
+describe('v-collision directive — updated() hook (group diffing)', () => {
+  let rafCallbacks: FrameRequestCallback[]
+
+  beforeEach(() => {
+    rafCallbacks = []
+
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        observe = vi.fn()
+        unobserve = vi.fn()
+        disconnect = vi.fn()
+      },
+    )
+
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      rafCallbacks.push(cb)
+      return rafCallbacks.length
+    })
+
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const flushRaf = () => {
+    for (const cb of rafCallbacks.splice(0)) cb(0)
+  }
+
+  const mockOverlapping = (el: HTMLElement) => {
+    vi.spyOn(el, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, width: 100, height: 100,
+      right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}),
+    } as DOMRect)
+  }
+
+  it('stops firing for the old group and starts firing for the new group when an element moves groups', async () => {
+    // DISCRIMINATING: exercises the `removed` / `added` branches of the updated() diff.
+    const { mount } = await import('@vue/test-utils')
+    const { default: VueCollision } = await import('../index')
+
+    const onCollideA = vi.fn()
+    const onCollideB = vi.fn()
+
+    const wrapper = mount(
+      {
+        data() {
+          return { dynamicGroups: ['groupA'] }
+        },
+        template: `
+          <div>
+            <div id="moving" v-collision.prevent="dynamicGroups" @collide-groupA="onCollideA" @collide-groupB="onCollideB" />
+            <div id="a-partner" v-collision.prevent="['groupA']" />
+            <div id="b-partner" v-collision.prevent="['groupB']" />
+          </div>
+        `,
+        methods: { onCollideA, onCollideB },
+      },
+      { global: { plugins: [VueCollision] } },
+    )
+
+    const moving = wrapper.find('#moving').element as HTMLElement
+    const aPartner = wrapper.find('#a-partner').element as HTMLElement
+    const bPartner = wrapper.find('#b-partner').element as HTMLElement
+    ;[moving, aPartner, bPartner].forEach(mockOverlapping)
+
+    flushRaf()
+    expect(onCollideA).toHaveBeenCalledOnce()
+    expect(onCollideB).not.toHaveBeenCalled()
+
+    await wrapper.setData({ dynamicGroups: ['groupB'] })
+    flushRaf()
+
+    // groupA now holds only a-partner (no pair) -> no additional groupA event;
+    // groupB now holds moving + b-partner -> a fresh collide-groupB event
+    expect(onCollideA).toHaveBeenCalledOnce()
+    expect(onCollideB).toHaveBeenCalledOnce()
+  })
+
+  it('removing an element from its only group stops future collide events for it', async () => {
+    // DISCRIMINATING: exercises the `removed` branch with no replacement group.
+    const { mount } = await import('@vue/test-utils')
+    const { default: VueCollision } = await import('../index')
+
+    const onCollide = vi.fn()
+
+    const wrapper = mount(
+      {
+        data() {
+          return { dynamicGroups: ['groupA'] }
+        },
+        template: `
+          <div>
+            <div id="moving" v-collision.prevent="dynamicGroups" @collide-groupA="onCollide" />
+            <div id="a-partner" v-collision.prevent="['groupA']" />
+          </div>
+        `,
+        methods: { onCollide },
+      },
+      { global: { plugins: [VueCollision] } },
+    )
+
+    const moving = wrapper.find('#moving').element as HTMLElement
+    const aPartner = wrapper.find('#a-partner').element as HTMLElement
+    ;[moving, aPartner].forEach(mockOverlapping)
+
+    flushRaf()
+    expect(onCollide).toHaveBeenCalledOnce()
+
+    await wrapper.setData({ dynamicGroups: [] })
+    flushRaf()
+
+    expect(onCollide).toHaveBeenCalledOnce()
+  })
+
+  it('keeps detecting collisions across an update that leaves groups unchanged', async () => {
+    // DISCRIMINATING: exercises the `kept` branch — a new array reference, same group names.
+    const { mount } = await import('@vue/test-utils')
+    const { default: VueCollision } = await import('../index')
+
+    const onCollide = vi.fn()
+
+    const wrapper = mount(
+      {
+        data() {
+          return { dynamicGroups: ['groupA'] }
+        },
+        template: `
+          <div>
+            <div id="moving" v-collision.prevent="dynamicGroups" @collide-groupA="onCollide" />
+            <div id="a-partner" v-collision.prevent="['groupA']" />
+          </div>
+        `,
+        methods: { onCollide },
+      },
+      { global: { plugins: [VueCollision] } },
+    )
+
+    const moving = wrapper.find('#moving').element as HTMLElement
+    const aPartner = wrapper.find('#a-partner').element as HTMLElement
+    ;[moving, aPartner].forEach(mockOverlapping)
+
+    // New array, same contents -> triggers updated() with removed=[] added=[] kept=['groupA']
+    await wrapper.setData({ dynamicGroups: ['groupA'] })
+    flushRaf()
+
+    expect(onCollide).toHaveBeenCalledOnce()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Plugin state isolation — separate createApp().use(plugin) instances
+// ---------------------------------------------------------------------------
+
+describe('plugin state isolation across createApp() instances', () => {
+  let rafCallbacks: FrameRequestCallback[]
+
+  beforeEach(() => {
+    rafCallbacks = []
+
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        observe = vi.fn()
+        unobserve = vi.fn()
+        disconnect = vi.fn()
+      },
+    )
+
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      rafCallbacks.push(cb)
+      return rafCallbacks.length
+    })
+
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('does not let a second createApp().use(VueCollision) clobber or share the first app\'s groups', async () => {
+    // DISCRIMINATING: with module-scoped state, the second install() call resets the shared
+    // `customGroups` record, wiping out app1's registrations even though the two apps never
+    // shared an element. With per-install state this is impossible.
+    const { mount } = await import('@vue/test-utils')
+    const { default: VueCollision } = await import('../index')
+
+    const onCollideApp1 = vi.fn()
+    const onCollideApp2 = vi.fn()
+
+    const app1 = mount(
+      {
+        template: `
+          <div>
+            <div id="a1" v-collision.prevent="['shared']" @collide-shared="onCollideApp1" />
+            <div id="a2" v-collision.prevent="['shared']" />
+          </div>
+        `,
+        methods: { onCollideApp1 },
+      },
+      { global: { plugins: [VueCollision] } },
+    )
+
+    // Mounting a second app runs install() again — must not disturb app1's state.
+    const app2 = mount(
+      {
+        template: `<div id="b1" v-collision.prevent="['shared']" @collide-shared="onCollideApp2" />`,
+        methods: { onCollideApp2 },
+      },
+      { global: { plugins: [VueCollision] } },
+    )
+
+    const a1 = app1.find('#a1').element as HTMLElement
+    const a2 = app1.find('#a2').element as HTMLElement
+    const b1 = app2.element as HTMLElement
+    ;[a1, a2, b1].forEach((el) =>
+      vi.spyOn(el, 'getBoundingClientRect').mockReturnValue({
+        left: 0, top: 0, width: 100, height: 100,
+        right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}),
+      } as DOMRect),
+    )
+
+    for (const cb of rafCallbacks.splice(0)) cb(0)
+
+    // app1's own pair (a1, a2) still collides — group registration survived app2's install().
+    expect(onCollideApp1).toHaveBeenCalledOnce()
+    // app2 has only a single element in 'shared' — no partner, no cross-app pairing.
+    expect(onCollideApp2).not.toHaveBeenCalled()
+  })
+})

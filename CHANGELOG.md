@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **Per-app plugin state (SSR safety).** `install()` used to mutate module-scoped state (`customGroups`, `elementStates`, `globalTriggerListeners`), so concurrent `createApp()` instances (e.g. under SSR) could clobber each other's collision groups. State is now created fresh per `install()` call and closed over by that install's directive instance.
+- Custom group entries are now deleted once their last element unmounts, instead of being kept around empty forever.
+
+### Removed
+
+- Dead internal window-group tracking (`windowGroup` array) — it was written to but never read for any collision decision.
+
 ## [2.0.0] — 2026-06-28
 
 ### Breaking changes

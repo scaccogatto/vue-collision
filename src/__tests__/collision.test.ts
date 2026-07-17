@@ -1,3 +1,4 @@
+import type { DirectiveBinding, VNode } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { checkCollision, combine } from '../index'
 
@@ -503,6 +504,45 @@ describe('v-collision directive — updated() hook (group diffing)', () => {
 
     expect(onCollide).toHaveBeenCalledOnce()
   })
+
+  it('falls back to an empty group list when binding.value becomes non-array on update', async () => {
+    // DISCRIMINATING: exercises the false branch of `Array.isArray(binding.value)` in
+    // updated() — without the fallback, nextGroups would be `undefined` and `.filter` calls
+    // on it would throw instead of treating the element as leaving all its groups.
+    const { mount } = await import('@vue/test-utils')
+    const { default: VueCollision } = await import('../index')
+
+    const onCollide = vi.fn()
+
+    const wrapper = mount(
+      {
+        data() {
+          return { dynamicGroups: ['groupA'] as string[] | undefined }
+        },
+        template: `
+          <div>
+            <div id="moving" v-collision.prevent="dynamicGroups" @collide-groupA="onCollide" />
+            <div id="a-partner" v-collision.prevent="['groupA']" />
+          </div>
+        `,
+        methods: { onCollide },
+      },
+      { global: { plugins: [VueCollision] } },
+    )
+
+    const moving = wrapper.find('#moving').element as HTMLElement
+    const aPartner = wrapper.find('#a-partner').element as HTMLElement
+    ;[moving, aPartner].forEach(mockOverlapping)
+
+    flushRaf()
+    expect(onCollide).toHaveBeenCalledOnce()
+
+    // binding.value flips from an array to undefined -> moving leaves groupA entirely.
+    await wrapper.setData({ dynamicGroups: undefined })
+    flushRaf()
+
+    expect(onCollide).toHaveBeenCalledOnce()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -584,5 +624,213 @@ describe('plugin state isolation across createApp() instances', () => {
     expect(onCollideApp1).toHaveBeenCalledOnce()
     // app2 has only a single element in 'shared' — no partner, no cross-app pairing.
     expect(onCollideApp2).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Duplicate group names within a single binding value
+// ---------------------------------------------------------------------------
+
+describe('v-collision directive — duplicate group names in a single binding', () => {
+  let rafCallback: FrameRequestCallback
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        observe = vi.fn()
+        unobserve = vi.fn()
+        disconnect = vi.fn()
+      },
+    )
+
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      rafCallback = cb
+      return 1
+    })
+
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('does not register the same element twice when the group array has a duplicate', async () => {
+    // DISCRIMINATING: exercises the false branch of `!group.elements.includes(el)` in
+    // pushToGroup — without dedup, elA would be paired with itself and each element would
+    // receive more than one collide-dup event.
+    const { mount } = await import('@vue/test-utils')
+    const { default: VueCollision } = await import('../index')
+
+    const onCollideA = vi.fn()
+    const onCollideB = vi.fn()
+
+    const wrapper = mount(
+      {
+        template: `
+          <div>
+            <div id="a" v-collision.prevent="['dup', 'dup']" @collide-dup="onCollideA" />
+            <div id="b" v-collision.prevent="['dup']" @collide-dup="onCollideB" />
+          </div>
+        `,
+        methods: { onCollideA, onCollideB },
+      },
+      { global: { plugins: [VueCollision] } },
+    )
+
+    const elA = wrapper.find('#a').element as HTMLElement
+    const elB = wrapper.find('#b').element as HTMLElement
+
+    vi.spyOn(elA, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, width: 100, height: 100,
+      right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}),
+    } as DOMRect)
+    vi.spyOn(elB, 'getBoundingClientRect').mockReturnValue({
+      left: 50, top: 50, width: 100, height: 100,
+      right: 150, bottom: 150, x: 50, y: 50, toJSON: () => ({}),
+    } as DOMRect)
+
+    rafCallback(0)
+
+    expect(onCollideA).toHaveBeenCalledOnce()
+    expect(onCollideB).toHaveBeenCalledOnce()
+  })
+
+  it('unmounting an element whose only group has a duplicate name does not throw', async () => {
+    // DISCRIMINATING: exercises the true branch of `!group` in removeFromGroup — the first
+    // removal (for 'soloGrp') empties and deletes the group; the second removal for the
+    // same duplicate name must be a no-op instead of throwing.
+    const { mount } = await import('@vue/test-utils')
+    const { default: VueCollision } = await import('../index')
+
+    const wrapper = mount(
+      { template: '<div id="solo" v-collision.prevent="[\'soloGrp\', \'soloGrp\']" />' },
+      { global: { plugins: [VueCollision] } },
+    )
+
+    expect(() => wrapper.unmount()).not.toThrow()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Global triggers (resize/scroll) — recompute all element-element groups
+// ---------------------------------------------------------------------------
+
+describe('v-collision plugin — global resize/scroll triggers', () => {
+  let rafCallback: FrameRequestCallback | undefined
+
+  beforeEach(() => {
+    rafCallback = undefined
+
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        observe = vi.fn()
+        unobserve = vi.fn()
+        disconnect = vi.fn()
+      },
+    )
+
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      rafCallback = cb
+      return 1
+    })
+
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('recomputes element-element groups when window fires a resize event', async () => {
+    // DISCRIMINATING: proves the default ['resize', 'scroll'] listeners wired in install()
+    // actually invoke checkAllElementGroups — without it, a resize after the initial mount
+    // would never schedule a fresh rAF check and onCollide would not fire a second time.
+    const { mount } = await import('@vue/test-utils')
+    const { default: VueCollision } = await import('../index')
+
+    const onCollide = vi.fn()
+
+    const wrapper = mount(
+      {
+        template: `
+          <div>
+            <div id="a" v-collision.prevent="['groupR']" @collide-groupR="onCollide" />
+            <div id="b" v-collision.prevent="['groupR']" />
+          </div>
+        `,
+        methods: { onCollide },
+      },
+      { global: { plugins: [VueCollision] } },
+    )
+
+    const elA = wrapper.find('#a').element as HTMLElement
+    const elB = wrapper.find('#b').element as HTMLElement
+
+    vi.spyOn(elA, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, width: 100, height: 100,
+      right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}),
+    } as DOMRect)
+    vi.spyOn(elB, 'getBoundingClientRect').mockReturnValue({
+      left: 50, top: 50, width: 100, height: 100,
+      right: 150, bottom: 150, x: 50, y: 50, toJSON: () => ({}),
+    } as DOMRect)
+
+    // Flush the rAF scheduled at mount time, then isolate the resize-triggered one.
+    expect(rafCallback).toBeDefined()
+    rafCallback!(0)
+    expect(onCollide).toHaveBeenCalledOnce()
+
+    rafCallback = undefined
+    window.dispatchEvent(new Event('resize'))
+
+    expect(rafCallback).toBeDefined()
+    rafCallback!(0)
+
+    expect(onCollide).toHaveBeenCalledTimes(2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Defensive guards reachable via direct hook invocation (out-of-order calls)
+// ---------------------------------------------------------------------------
+
+describe('v-collision directive — defensive guards on out-of-order hook calls', () => {
+  it('updated() on an element with no prior mounted() state is a no-op', async () => {
+    const { collisionDirective } = await import('../index')
+    const { updated } = collisionDirective
+    if (typeof updated !== 'function') throw new Error('expected updated hook to be a function')
+
+    const el = document.createElement('div')
+    const binding = {
+      value: ['g'],
+      oldValue: null,
+      modifiers: {},
+      dir: collisionDirective,
+      instance: null,
+    } as DirectiveBinding<string[] | undefined>
+    const vnode = {} as unknown as VNode<unknown, HTMLElement>
+
+    expect(() => updated(el, binding, vnode, vnode)).not.toThrow()
+  })
+
+  it('unmounted() on an element with no prior mounted() state is a no-op', async () => {
+    const { collisionDirective } = await import('../index')
+    const { unmounted } = collisionDirective
+    if (typeof unmounted !== 'function') throw new Error('expected unmounted hook to be a function')
+
+    const el = document.createElement('div')
+    const binding = {
+      value: undefined,
+      oldValue: null,
+      modifiers: {},
+      dir: collisionDirective,
+      instance: null,
+    } as DirectiveBinding<string[] | undefined>
+    const vnode = {} as unknown as VNode<unknown, HTMLElement>
+
+    expect(() => unmounted(el, binding, vnode, null)).not.toThrow()
   })
 })

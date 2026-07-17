@@ -63,10 +63,8 @@ const createPluginState = (): PluginState => ({
 // Viewport detection via IntersectionObserver (fires once, edge-triggered)
 // ---------------------------------------------------------------------------
 
-const observeViewport = (state: PluginState, el: HTMLElement): void => {
-  const elState = state.elementStates.get(el)
-  if (!elState) return
-
+// elState is always defined here — the only caller (mounted) just created it.
+const observeViewport = (el: HTMLElement, elState: CollisionElementState): void => {
   const observer = new IntersectionObserver((entries) => {
     for (const entry of entries) {
       const event = entry.isIntersecting ? 'collide' : 'non-collide'
@@ -156,10 +154,11 @@ const createDirective = (
   mounted(el: HTMLElement, binding: DirectiveBinding<string[] | undefined>) {
     const groups = Array.isArray(binding.value) ? binding.value : []
     const inWindowGroup = !binding.modifiers['prevent']
+    const elState: CollisionElementState = { inWindowGroup, groups }
 
-    state.elementStates.set(el, { inWindowGroup, groups })
+    state.elementStates.set(el, elState)
 
-    if (inWindowGroup) observeViewport(state, el)
+    if (inWindowGroup) observeViewport(el, elState)
 
     for (const g of groups) {
       pushToGroup(state, el, g)

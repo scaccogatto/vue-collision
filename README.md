@@ -7,6 +7,8 @@
 [![npm downloads](https://img.shields.io/npm/dm/vue-collision)](https://www.npmjs.com/package/vue-collision)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+[Live demo](https://scaccogatto.github.io/vue-collision/) — drag two boxes into each other, then scroll a card in and out of the viewport.
+
 ## Features
 
 - **Viewport collision** via [`IntersectionObserver`](https://developer.mozilla.org/en-US/docs/Web/API/Intersection_Observer_API) — zero-cost, edge-triggered

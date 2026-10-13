@@ -10,16 +10,15 @@ const push = (line: string) => {
   log.value = [line, ...log.value].slice(0, 6)
 }
 
-// Element-element group: `detail` is the other element of the pair.
+// Element-element group: `detail` is the other element of the pair. Group events are
+// edge-triggered, so each handler runs once per change of the pair's overlap state.
 const onGroupCollide = (event: Event) => {
-  if (overlapping.value) return
   overlapping.value = true
   const other = (event as CustomEvent<HTMLElement>).detail
   push(`collide-boxes with "${other.textContent?.trim()}"`)
 }
 
 const onGroupLeave = () => {
-  if (!overlapping.value) return
   overlapping.value = false
   push('non-collide-boxes')
 }
@@ -47,12 +46,7 @@ const onViewportLeave = () => {
     </p>
 
     <div class="stage">
-      <div
-        v-collision.prevent="['boxes']"
-        class="box static"
-        @collide-boxes="onGroupCollide"
-        @non-collide-boxes="onGroupLeave"
-      >
+      <div v-collision.prevent="['boxes']" class="box static">
         static
       </div>
       <div
@@ -73,7 +67,7 @@ const onViewportLeave = () => {
       <code>{{ offset }}%</code>
     </label>
 
-    <p class="verdict">
+    <p class="verdict" aria-live="polite">
       <code>v-collision="['boxes']"</code> →
       <strong :class="{ on: overlapping }">
         {{ overlapping ? 'colliding' : 'apart' }}
@@ -96,7 +90,7 @@ const onViewportLeave = () => {
       @non-collide="onViewportLeave"
     >
       <span class="label">viewport group</span>
-      <strong>{{ inViewport ? 'in viewport' : 'out of viewport' }}</strong>
+      <strong aria-live="polite">{{ inViewport ? 'in viewport' : 'out of viewport' }}</strong>
     </div>
   </main>
 </template>

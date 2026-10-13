@@ -14,6 +14,8 @@ export interface Rect {
 export interface CollisionGroupState {
   elements: HTMLElement[]
   combinations: [HTMLElement, HTMLElement][]
+  /** Last reported overlap per pair, keyed by the pair's first then second element */
+  overlaps: Map<HTMLElement, Map<HTMLElement, boolean>>
   rafId?: number
 }
 
@@ -26,6 +28,18 @@ interface CollisionElementState {
 export interface CollisionOptions {
   /** DOM events that trigger re-check of all element-element groups. Default: ['resize', 'scroll'] */
   globalTriggers?: string[]
+}
+
+/** Modifiers accepted by `v-collision` */
+export type CollisionModifiers = 'prevent'
+
+/** Type of the `v-collision` directive: binds to an HTML element, takes an optional list of group names */
+export type CollisionDirective = ObjectDirective<HTMLElement, string[] | undefined, CollisionModifiers>
+
+declare module 'vue' {
+  interface GlobalDirectives {
+    vCollision: CollisionDirective
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -49,15 +63,41 @@ export const combine = <T>(xs: T[]): [T, T][] =>
 
 interface PluginState {
   customGroups: Record<string, CollisionGroupState>
+  globalTriggers: readonly string[]
   globalTriggerListeners: Array<[string, () => void]>
   elementStates: WeakMap<HTMLElement, CollisionElementState>
 }
 
-const createPluginState = (): PluginState => ({
+const DEFAULT_GLOBAL_TRIGGERS: readonly string[] = ['resize', 'scroll']
+
+const createPluginState = (globalTriggers: readonly string[]): PluginState => ({
   customGroups: {},
+  globalTriggers,
   globalTriggerListeners: [],
   elementStates: new WeakMap(),
 })
+
+// Capture phase, so scroll events from inner scroll containers (which do not bubble)
+// still reach the window listener.
+const TRIGGER_LISTENER_OPTIONS: AddEventListenerOptions = { passive: true, capture: true }
+
+// Listeners are attached lazily from the first directive `mounted` hook, which only runs
+// in the browser: install() itself never touches `window`, so it is safe under SSR.
+const startGlobalTriggers = (state: PluginState): void => {
+  if (state.globalTriggerListeners.length > 0) return
+  state.globalTriggerListeners = state.globalTriggers.map((event) => {
+    const listener = () => checkAllElementGroups(state)
+    window.addEventListener(event, listener, TRIGGER_LISTENER_OPTIONS)
+    return [event, listener]
+  })
+}
+
+const stopGlobalTriggers = (state: PluginState): void => {
+  for (const [event, listener] of state.globalTriggerListeners) {
+    window.removeEventListener(event, listener, TRIGGER_LISTENER_OPTIONS)
+  }
+  state.globalTriggerListeners = []
+}
 
 // ---------------------------------------------------------------------------
 // Viewport detection via IntersectionObserver (fires once, edge-triggered)
@@ -90,18 +130,20 @@ const checkElementGroup = (state: PluginState, groupName: string): void => {
   if (!group) return
   // Vue 3.5's template compiler uses the `on:event-name` prop format for DOM elements,
   // which preserves the event name verbatim (parseName strips `on:` and keeps the rest).
-  // So `@collide-groupA` registers a DOM listener for exactly `collide-groupA` —
+  // So `@collide-groupA` registers a DOM listener for exactly `collide-groupA`:
   // dispatch the same string the user passed as the group name.
+  //
+  // Edge-triggered: each pair reports its initial state once, then only transitions.
   for (const [a, b] of group.combinations) {
-    const ra = a.getBoundingClientRect()
-    const rb = b.getBoundingClientRect()
-    if (checkCollision(ra, rb)) {
-      a.dispatchEvent(new CustomEvent(`collide-${groupName}`, { detail: b, bubbles: false }))
-      b.dispatchEvent(new CustomEvent(`collide-${groupName}`, { detail: a, bubbles: false }))
-    } else {
-      a.dispatchEvent(new CustomEvent(`non-collide-${groupName}`, { detail: b, bubbles: false }))
-      b.dispatchEvent(new CustomEvent(`non-collide-${groupName}`, { detail: a, bubbles: false }))
-    }
+    const colliding = checkCollision(a.getBoundingClientRect(), b.getBoundingClientRect())
+    const overlapsOfA = group.overlaps.get(a) ?? new Map<HTMLElement, boolean>()
+    if (overlapsOfA.get(b) === colliding) continue
+    overlapsOfA.set(b, colliding)
+    group.overlaps.set(a, overlapsOfA)
+
+    const event = `${colliding ? 'collide' : 'non-collide'}-${groupName}`
+    a.dispatchEvent(new CustomEvent(event, { detail: b, bubbles: false }))
+    b.dispatchEvent(new CustomEvent(event, { detail: a, bubbles: false }))
   }
 }
 
@@ -124,7 +166,7 @@ const checkAllElementGroups = (state: PluginState): void => {
 
 const pushToGroup = (state: PluginState, el: HTMLElement, groupName: string): void => {
   if (!state.customGroups[groupName]) {
-    state.customGroups[groupName] = { elements: [], combinations: [] }
+    state.customGroups[groupName] = { elements: [], combinations: [], overlaps: new Map() }
   }
   const group = state.customGroups[groupName]
   if (!group.elements.includes(el)) {
@@ -137,6 +179,9 @@ const removeFromGroup = (state: PluginState, el: HTMLElement, groupName: string)
   const group = state.customGroups[groupName]
   if (!group) return
   group.elements = group.elements.filter((e) => e !== el)
+  // Forget the pair states of the leaving element, so it reports afresh if it rejoins.
+  group.overlaps.delete(el)
+  for (const overlapsOfOther of group.overlaps.values()) overlapsOfOther.delete(el)
   if (group.elements.length === 0) {
     delete state.customGroups[groupName]
     return
@@ -148,15 +193,16 @@ const removeFromGroup = (state: PluginState, el: HTMLElement, groupName: string)
 // Directive implementation — created per-install, closes over that install's state
 // ---------------------------------------------------------------------------
 
-const createDirective = (
-  state: PluginState,
-): ObjectDirective<HTMLElement, string[] | undefined> => ({
-  mounted(el: HTMLElement, binding: DirectiveBinding<string[] | undefined>) {
+type CollisionBinding = DirectiveBinding<string[] | undefined, CollisionModifiers>
+
+const createDirective = (state: PluginState): CollisionDirective => ({
+  mounted(el: HTMLElement, binding: CollisionBinding) {
     const groups = Array.isArray(binding.value) ? binding.value : []
-    const inWindowGroup = !binding.modifiers['prevent']
+    const inWindowGroup = !binding.modifiers.prevent
     const elState: CollisionElementState = { inWindowGroup, groups }
 
     state.elementStates.set(el, elState)
+    startGlobalTriggers(state)
 
     if (inWindowGroup) observeViewport(el, elState)
 
@@ -166,7 +212,7 @@ const createDirective = (
     }
   },
 
-  updated(el: HTMLElement, binding: DirectiveBinding<string[] | undefined>) {
+  updated(el: HTMLElement, binding: CollisionBinding) {
     const elState = state.elementStates.get(el)
     if (!elState) return
 
@@ -203,18 +249,12 @@ const createDirective = (
 // Plugin
 // ---------------------------------------------------------------------------
 
-const VueCollision: Plugin = {
+const VueCollision: Plugin<[CollisionOptions?]> = {
   install(app: App, options: CollisionOptions = {}) {
-    const triggers = options.globalTriggers ?? ['resize', 'scroll']
-    const state = createPluginState()
-
-    for (const event of triggers) {
-      const listener = () => checkAllElementGroups(state)
-      window.addEventListener(event, listener, { passive: true })
-      state.globalTriggerListeners.push([event, listener])
-    }
+    const state = createPluginState(options.globalTriggers ?? DEFAULT_GLOBAL_TRIGGERS)
 
     app.directive('collision', createDirective(state))
+    app.onUnmount(() => stopGlobalTriggers(state))
   },
 }
 
@@ -223,4 +263,9 @@ export default VueCollision
 // ---------------------------------------------------------------------------
 // Convenience re-exports for tree-shaking and testing
 // ---------------------------------------------------------------------------
-export const collisionDirective = createDirective(createPluginState())
+/**
+ * Standalone directive for local registration (`directives: { collision: collisionDirective }`).
+ * It has no global triggers: element groups are only re-checked on mount and update, never on
+ * resize or scroll. Prefer `app.use(VueCollision)` unless you need local registration.
+ */
+export const collisionDirective: CollisionDirective = createDirective(createPluginState([]))

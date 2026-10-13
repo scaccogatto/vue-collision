@@ -11,8 +11,9 @@ export default defineConfig({
     vue(),
     dts({
       include: ['src/index.ts'],
-      outDir: 'dist',
-      rollupTypes: true,
+      // One declaration file per module format: index.d.ts for the ESM entry and
+      // index.d.cts for the CJS entry, so `require` consumers get CJS-flavored types.
+      outDirs: ['dist', { dir: 'dist', moduleFormat: 'cjs' }],
       // Library sources are pure TS. Without this, unplugin-dts finds
       // demo/App.vue while scanning the root and switches to the Vue
       // processor, which needs @vue/language-core.

@@ -10,7 +10,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/scaccogatto/vue-collision.git"
+    "url": "git+https://github.com/scaccogatto/vue-collision.git"
+  },
+  "homepage": "https://scaccogatto.github.io/vue-collision/",
+  "bugs": {
+    "url": "https://github.com/scaccogatto/vue-collision/issues"
   },
   "license": "MIT",
   "keywords": [
@@ -30,10 +34,16 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/vue-collision.js",
-      "require": "./dist/vue-collision.cjs"
-    }
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/vue-collision.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/vue-collision.cjs"
+      }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist"
@@ -48,18 +58,24 @@
     "prepublishOnly": "npm run build",
     "build-demo": "vite build --config vite.config.demo.ts",
     "dev-demo": "vite --config vite.config.demo.ts",
-    "typecheck-demo": "vue-tsc --noEmit -p tsconfig.demo.json"
+    "typecheck-demo": "vue-tsc --noEmit -p tsconfig.demo.json",
+    "lint:package": "publint --strict && attw --pack ."
+  },
+  "engines": {
+    "node": ">=24"
   },
   "peerDependencies": {
-    "vue": "^3.0.0"
+    "vue": "^3.5.0"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@eslint/js": "^10.0.1",
     "@vitejs/plugin-vue": "^6.0.10",
     "@vitest/coverage-v8": "^5.0.4",
     "@vue/test-utils": "^2.4.11",
     "eslint": "^10.6.0",
     "happy-dom": "^21.0.1",
+    "publint": "^0.3.25",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.2",
     "vite": "^8.3.4",

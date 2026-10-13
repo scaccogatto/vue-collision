@@ -744,24 +744,31 @@ describe('v-collision plugin — global resize/scroll triggers', () => {
     vi.unstubAllGlobals()
   })
 
+  const rect = (left: number) =>
+    ({
+      left, top: 0, width: 100, height: 100,
+      right: left + 100, bottom: 100, x: left, y: 0, toJSON: () => ({}),
+    }) as DOMRect
+
   it('recomputes element-element groups when window fires a resize event', async () => {
-    // DISCRIMINATING: proves the default ['resize', 'scroll'] listeners wired in install()
-    // actually invoke checkAllElementGroups — without it, a resize after the initial mount
-    // would never schedule a fresh rAF check and onCollide would not fire a second time.
+    // DISCRIMINATING: proves the default ['resize', 'scroll'] listeners invoke
+    // checkAllElementGroups. Without them, moving an element apart and resizing would never
+    // schedule a fresh rAF check and the transition to non-collide would go unreported.
     const { mount } = await import('@vue/test-utils')
     const { default: VueCollision } = await import('../index')
 
     const onCollide = vi.fn()
+    const onNonCollide = vi.fn()
 
     const wrapper = mount(
       {
         template: `
           <div>
-            <div id="a" v-collision.prevent="['groupR']" @collide-groupR="onCollide" />
+            <div id="a" v-collision.prevent="['groupR']" @collide-groupR="onCollide" @non-collide-groupR="onNonCollide" />
             <div id="b" v-collision.prevent="['groupR']" />
           </div>
         `,
-        methods: { onCollide },
+        methods: { onCollide, onNonCollide },
       },
       { global: { plugins: [VueCollision] } },
     )
@@ -769,27 +776,271 @@ describe('v-collision plugin — global resize/scroll triggers', () => {
     const elA = wrapper.find('#a').element as HTMLElement
     const elB = wrapper.find('#b').element as HTMLElement
 
-    vi.spyOn(elA, 'getBoundingClientRect').mockReturnValue({
-      left: 0, top: 0, width: 100, height: 100,
-      right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}),
-    } as DOMRect)
-    vi.spyOn(elB, 'getBoundingClientRect').mockReturnValue({
-      left: 50, top: 50, width: 100, height: 100,
-      right: 150, bottom: 150, x: 50, y: 50, toJSON: () => ({}),
-    } as DOMRect)
+    vi.spyOn(elA, 'getBoundingClientRect').mockReturnValue(rect(0))
+    const rectB = vi.spyOn(elB, 'getBoundingClientRect').mockReturnValue(rect(50))
 
     // Flush the rAF scheduled at mount time, then isolate the resize-triggered one.
     expect(rafCallback).toBeDefined()
     rafCallback!(0)
     expect(onCollide).toHaveBeenCalledOnce()
 
+    rectB.mockReturnValue(rect(500))
     rafCallback = undefined
     window.dispatchEvent(new Event('resize'))
 
     expect(rafCallback).toBeDefined()
     rafCallback!(0)
 
+    expect(onCollide).toHaveBeenCalledOnce()
+    expect(onNonCollide).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('recomputes element-element groups when an inner scroll container scrolls', async () => {
+    // DISCRIMINATING: element scroll events do not bubble, so only a capture-phase window
+    // listener sees them. With a bubbling listener no rAF would be scheduled.
+    const { mount } = await import('@vue/test-utils')
+    const { default: VueCollision } = await import('../index')
+
+    const wrapper = mount(
+      {
+        template: `
+          <div id="panel" style="overflow: auto">
+            <div v-collision.prevent="['groupS']" />
+            <div v-collision.prevent="['groupS']" />
+          </div>
+        `,
+      },
+      { global: { plugins: [VueCollision] }, attachTo: document.body },
+    )
+
+    rafCallback!(0)
+    rafCallback = undefined
+
+    wrapper.find('#panel').element.dispatchEvent(new Event('scroll', { bubbles: false }))
+
+    expect(rafCallback).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('uses the globalTriggers option instead of the defaults', async () => {
+    const { mount } = await import('@vue/test-utils')
+    const { default: VueCollision } = await import('../index')
+
+    const wrapper = mount(
+      {
+        template: `
+          <div>
+            <div v-collision.prevent="['groupO']" />
+            <div v-collision.prevent="['groupO']" />
+          </div>
+        `,
+      },
+      { global: { plugins: [[VueCollision, { globalTriggers: ['orientationchange'] }]] } },
+    )
+
+    rafCallback!(0)
+    rafCallback = undefined
+
+    window.dispatchEvent(new Event('resize'))
+    expect(rafCallback).toBeUndefined()
+
+    window.dispatchEvent(new Event('orientationchange'))
+    expect(rafCallback).toBeDefined()
+    wrapper.unmount()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Global trigger listener lifecycle: attached lazily, removed on app.unmount()
+// ---------------------------------------------------------------------------
+
+describe('v-collision plugin — global trigger listener lifecycle', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        observe = vi.fn()
+        unobserve = vi.fn()
+        disconnect = vi.fn()
+      },
+    )
+    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1))
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  const triggerListeners = (spy: { mock: { calls: unknown[][] } }) =>
+    spy.mock.calls
+      .filter(([event]) => event === 'resize' || event === 'scroll')
+      .map(([event, listener]) => [event, listener])
+
+  it('does not touch window in install(), before any element mounts', async () => {
+    const { createApp } = await import('vue')
+    const { default: VueCollision } = await import('../index')
+    const addSpy = vi.spyOn(window, 'addEventListener')
+
+    createApp({ render: () => null }).use(VueCollision)
+
+    expect(triggerListeners(addSpy)).toEqual([])
+  })
+
+  it('removes every window listener it added when the app unmounts', async () => {
+    // DISCRIMINATING: without app.onUnmount cleanup each unmounted app leaves its resize and
+    // scroll listeners (and the closed-over plugin state) on window forever.
+    const { createApp, h, resolveDirective, withDirectives } = await import('vue')
+    const { default: VueCollision } = await import('../index')
+    const addSpy = vi.spyOn(window, 'addEventListener')
+    const removeSpy = vi.spyOn(window, 'removeEventListener')
+
+    const app = createApp({
+      render: () => withDirectives(h('div'), [[resolveDirective('collision')!, ['g']]]),
+    }).use(VueCollision)
+    app.mount(document.createElement('div'))
+
+    const added = triggerListeners(addSpy)
+    expect(added).toHaveLength(2)
+
+    app.unmount()
+
+    expect(triggerListeners(removeSpy)).toEqual(added)
+  })
+
+  it('the standalone collisionDirective adds no window listeners', async () => {
+    const { mount } = await import('@vue/test-utils')
+    const { collisionDirective } = await import('../index')
+    const addSpy = vi.spyOn(window, 'addEventListener')
+
+    const wrapper = mount({
+      directives: { collision: collisionDirective },
+      template: '<div v-collision.prevent="[\'g\']" />',
+    })
+
+    expect(triggerListeners(addSpy)).toEqual([])
+    wrapper.unmount()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Group events are edge-triggered: initial state once, then only transitions
+// ---------------------------------------------------------------------------
+
+describe('v-collision directive — edge-triggered group events', () => {
+  let rafCallbacks: FrameRequestCallback[]
+
+  beforeEach(() => {
+    rafCallbacks = []
+
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        observe = vi.fn()
+        unobserve = vi.fn()
+        disconnect = vi.fn()
+      },
+    )
+
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      rafCallbacks.push(cb)
+      return rafCallbacks.length
+    })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const flushRaf = () => {
+    for (const cb of rafCallbacks.splice(0)) cb(0)
+  }
+
+  const recheck = () => {
+    window.dispatchEvent(new Event('resize'))
+    flushRaf()
+  }
+
+  const rect = (left: number) =>
+    ({
+      left, top: 0, width: 100, height: 100,
+      right: left + 100, bottom: 100, x: left, y: 0, toJSON: () => ({}),
+    }) as DOMRect
+
+  const mountPair = async (groupsOfA: string[] = ['edge']) => {
+    const { mount } = await import('@vue/test-utils')
+    const { default: VueCollision } = await import('../index')
+
+    const onCollide = vi.fn()
+    const onNonCollide = vi.fn()
+    const wrapper = mount(
+      {
+        data: () => ({ groupsOfA }),
+        template: `
+          <div>
+            <div id="a" v-collision.prevent="groupsOfA" @collide-edge="onCollide" @non-collide-edge="onNonCollide" />
+            <div id="b" v-collision.prevent="['edge']" />
+          </div>
+        `,
+        methods: { onCollide, onNonCollide },
+      },
+      { global: { plugins: [VueCollision] } },
+    )
+    const rectA = vi.spyOn(wrapper.find('#a').element as HTMLElement, 'getBoundingClientRect')
+    const rectB = vi.spyOn(wrapper.find('#b').element as HTMLElement, 'getBoundingClientRect')
+    rectA.mockReturnValue(rect(0))
+    return { wrapper, rectB, onCollide, onNonCollide }
+  }
+
+  it('does not re-dispatch while the overlap state of a pair is unchanged', async () => {
+    // DISCRIMINATING: level-triggered dispatch would fire collide-edge on every check.
+    const { wrapper, rectB, onCollide, onNonCollide } = await mountPair()
+    rectB.mockReturnValue(rect(50))
+
+    flushRaf()
+    recheck()
+    recheck()
+
+    expect(onCollide).toHaveBeenCalledOnce()
+    expect(onNonCollide).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('reports the initial non-overlap once, then each transition once', async () => {
+    const { wrapper, rectB, onCollide, onNonCollide } = await mountPair()
+    rectB.mockReturnValue(rect(500))
+
+    flushRaf()
+    recheck()
+    expect(onNonCollide).toHaveBeenCalledOnce()
+    expect(onCollide).not.toHaveBeenCalled()
+
+    rectB.mockReturnValue(rect(50))
+    recheck()
+    recheck()
+    expect(onCollide).toHaveBeenCalledOnce()
+
+    rectB.mockReturnValue(rect(500))
+    recheck()
+    expect(onNonCollide).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('reports the current state again after an element leaves and rejoins a group', async () => {
+    const { wrapper, rectB, onCollide } = await mountPair()
+    rectB.mockReturnValue(rect(50))
+
+    flushRaf()
+    expect(onCollide).toHaveBeenCalledOnce()
+
+    await wrapper.setData({ groupsOfA: [] })
+    flushRaf()
+    await wrapper.setData({ groupsOfA: ['edge'] })
+    flushRaf()
+
     expect(onCollide).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
   })
 })
 

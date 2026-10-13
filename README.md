@@ -7,7 +7,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/vue-collision)](https://www.npmjs.com/package/vue-collision)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-[Live demo](https://scaccogatto.github.io/vue-collision/) — drag two boxes into each other, then scroll a card in and out of the viewport.
+[Live demo](https://scaccogatto.github.io/vue-collision/): move the slider to push one box into the other, then scroll a card in and out of the viewport.
 
 ## Features
 
@@ -16,8 +16,9 @@
 - Fires native DOM `CustomEvent`s (`collide`, `non-collide`, `collide-<group>`, `non-collide-<group>`)
 - Grouping: place elements in named groups; any pair within a group is checked
 - `.prevent` modifier to opt out of viewport tracking
-- TypeScript source with `.d.ts` declarations
-- Vue 3 only (v2.x); for Vue 2 use [v1.x](https://www.npmjs.com/package/vue-collision/v/1.6.0)
+- TypeScript source with ESM and CJS declarations, and `v-collision` registered in Vue's `GlobalDirectives` so `vue-tsc` checks its value in templates
+- SSR-safe: `install()` never touches `window`, listeners are attached on the first client-side mount
+- Requires Vue 3.5 or later. For Vue 2 use [v1.x](https://www.npmjs.com/package/vue-collision/v/1.6.0)
 
 ## Install
 
@@ -94,17 +95,37 @@ All events are native DOM `CustomEvent`s. Read the collider from `event.detail`.
 |-------|-----------|----------------|
 | `collide` | Element enters the viewport | `window` |
 | `non-collide` | Element leaves the viewport | `window` |
-| `collide-<group>` | Element overlaps another in the same group | The other `HTMLElement` |
+| `collide-<group>` | Element starts overlapping another in the same group | The other `HTMLElement` |
 | `non-collide-<group>` | Element stops overlapping another in the same group | The other `HTMLElement` |
+
+Group events are edge-triggered per pair, like the viewport events. On the first check of a pair (after mount, or after an element joins the group) both elements receive the current state, `collide-<group>` or `non-collide-<group>`. After that a pair dispatches again only when its overlap state changes. Both elements of the pair receive the event, so an element in a group of N elements can receive up to N - 1 events per check, one per partner.
+
+Group names are used verbatim in the event name, so `v-collision="['groupA']"` dispatches `collide-groupA`, which `@collide-groupA` listens to.
 
 ## Plugin options
 
 ```ts
 app.use(VueCollision, {
-  // Events that trigger element-group re-checks. Default: ['resize', 'scroll']
+  // Window events that trigger element-group re-checks. Default: ['resize', 'scroll']
   globalTriggers: ['resize', 'scroll'],
 })
 ```
+
+Trigger listeners are passive and use the capture phase, so scrolling inside an `overflow: auto` container also re-checks the groups. They are attached when the first `v-collision` element mounts and removed on `app.unmount()`.
+
+## Local registration
+
+`collisionDirective` is the directive without the plugin, for local registration:
+
+```ts
+import { collisionDirective } from 'vue-collision'
+
+export default {
+  directives: { collision: collisionDirective },
+}
+```
+
+It has no global triggers: element groups are re-checked only when an element mounts or updates, never on resize or scroll. Prefer `app.use(VueCollision)` unless you need local registration.
 
 ## Migrating from v1 (Vue 2 → Vue 3)
 
@@ -132,9 +153,11 @@ v2.0.0 is a full Vue 3 rewrite. Key breaking changes:
 
 ```sh
 npm install
+npm run lint
 npm run typecheck
-npm run build
 npm test
+npm run build
+npm run lint:package
 ```
 
 ## License
